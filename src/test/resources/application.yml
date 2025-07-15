@@ -1,0 +1,6 @@
+openapi:
+  documents:
+    - name: "Pet Store"
+      location: "src/test/resources/openapi/petstore.json"
+      overrideUrl: "http://localhost:8081"
+

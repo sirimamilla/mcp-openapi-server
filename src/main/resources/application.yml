@@ -1,0 +1,21 @@
+openapi:
+  documents:
+    - name: "Pet Store"
+      location: "https://petstore3.swagger.io/api/v3/openapi.json"
+#      overrideUrl: "http://localhost:8081"
+#    - name: "Another API"
+#      location: "path/to/your/local/openapi.json"
+
+server:
+  port: 8081
+
+# MCP Server Configuration
+spring:
+  ai:
+    engine:
+      enabled: true
+    transport:
+      mcp:
+        enabled: true
+        server:
+          port: 9090
