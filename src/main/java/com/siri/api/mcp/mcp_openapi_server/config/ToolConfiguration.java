@@ -69,7 +69,7 @@ public class ToolConfiguration {
             });
     }
 
-    private void registerSingleOperation(String operationId, OpenApiDefinitionService.ApiOperation apiOperation) {
+    public void registerSingleOperation(String operationId, OpenApiDefinitionService.ApiOperation apiOperation) {
         String beanName = operationId + "Tool";
         
         if (beanFactory.containsSingleton(beanName)) {
@@ -459,7 +459,7 @@ public class ToolConfiguration {
         return null;
     }
 
-    private String convertParametersToJsonSchema(io.swagger.v3.oas.models.Operation operation) {
+    public String convertParametersToJsonSchema(io.swagger.v3.oas.models.Operation operation) {
         Map<String, Object> schema = new HashMap<>();
         schema.put("type", "object");
         Map<String, Object> properties = new HashMap<>();

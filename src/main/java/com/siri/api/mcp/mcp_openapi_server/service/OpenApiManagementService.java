@@ -4,10 +4,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siri.api.mcp.mcp_openapi_server.config.OpenApiProperties;
 import com.siri.api.mcp.mcp_openapi_server.config.ToolConfiguration;
 import com.siri.api.mcp.mcp_openapi_server.dto.ToolInfo;
+import com.siri.api.mcp.mcp_openapi_server.service.ApiClient;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.spec.McpSchema;
+import java.util.function.BiFunction;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.beans.factory.support.DefaultSingletonBeanRegistry;
 import org.springframework.stereotype.Service;
@@ -30,6 +37,10 @@ public class OpenApiManagementService {
     private final ToolConfiguration toolConfiguration;
     private final ConfigurableBeanFactory beanFactory;
     private final ObjectMapper objectMapper;
+    private final ApiClient apiClient;
+    
+    @Autowired
+    private McpSyncServer mcpSyncServer;
     
     private final Map<String, OpenApiProperties.Document> dynamicDocuments = new ConcurrentHashMap<>();
     
@@ -103,7 +114,7 @@ public class OpenApiManagementService {
             })
         );
         
-        toolConfiguration.registerNewOperations(document);
+        registerMcpToolsForDocument(document);
     }
     
     private String saveFileContent(String content, String originalFilename) throws IOException {
@@ -124,23 +135,69 @@ public class OpenApiManagementService {
         return filePath.toString();
     }
     
+    private void registerMcpToolsForDocument(OpenApiProperties.Document document) {
+        openApiDefinitionService.getOperationCache().entrySet().stream()
+            .filter(entry -> entry.getValue().document().getName().equals(document.getName()))
+            .forEach(entry -> {
+                String operationId = entry.getKey();
+                OpenApiDefinitionService.ApiOperation apiOperation = entry.getValue();
+                
+                try {
+                    toolConfiguration.registerSingleOperation(operationId, apiOperation);
+                    
+                    String description = apiOperation.operation().getSummary() != null ?
+                            apiOperation.operation().getSummary() :
+                            "Operation: " + operationId;
+                    
+                    String schema = toolConfiguration.convertParametersToJsonSchema(apiOperation.operation());
+                    
+                    McpSchema.Tool mcpTool = new McpSchema.Tool(operationId, description, schema);
+                    
+                    BiFunction<McpSyncServerExchange, Map<String, Object>, McpSchema.CallToolResult> callHandler = 
+                        (exchange, params) -> {
+                            try {
+                                Object result = apiClient.invoke(operationId, params);
+                                return new McpSchema.CallToolResult(
+                                    List.of(new McpSchema.TextContent(result.toString())),
+                                    false
+                                );
+                            } catch (Exception e) {
+                                log.error("Error invoking tool {}: {}", operationId, e.getMessage(), e);
+                                return new McpSchema.CallToolResult(
+                                    List.of(new McpSchema.TextContent("Error: " + e.getMessage())),
+                                    true
+                                );
+                            }
+                        };
+                    
+                    SyncToolSpecification toolSpec = new SyncToolSpecification(mcpTool, callHandler);
+                    mcpSyncServer.addTool(toolSpec);
+                    log.info("Successfully registered MCP tool: {}", operationId);
+                    
+                } catch (Exception e) {
+                    log.error("Failed to register MCP tool {}: {}", operationId, e.getMessage(), e);
+                }
+            });
+    }
+    
     private void removeToolsForDocument(OpenApiProperties.Document document) {
         openApiDefinitionService.getOperationCache().entrySet().removeIf(entry -> {
             if (entry.getValue().document().getName().equals(document.getName())) {
                 String operationId = entry.getKey();
-                String beanName = operationId + "Tool";
                 
                 try {
+                    mcpSyncServer.removeTool(operationId);
+                    log.info("Removed MCP tool: {}", operationId);
+                    
+                    String beanName = operationId + "Tool";
                     if (beanFactory.containsSingleton(beanName)) {
                         if (beanFactory instanceof DefaultSingletonBeanRegistry) {
                             ((DefaultSingletonBeanRegistry) beanFactory).destroySingleton(beanName);
                             log.info("Removed tool bean: {}", beanName);
-                        } else {
-                            log.warn("Cannot remove bean {}: BeanFactory does not support singleton destruction", beanName);
                         }
                     }
                 } catch (Exception e) {
-                    log.warn("Error removing tool bean {}: {}", beanName, e.getMessage());
+                    log.warn("Error removing MCP tool {}: {}", operationId, e.getMessage());
                 }
                 
                 return true;
