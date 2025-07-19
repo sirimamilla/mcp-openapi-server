@@ -3,6 +3,7 @@ package com.siri.api.mcp.mcp_openapi_server.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siri.api.mcp.mcp_openapi_server.service.ApiClient;
 import com.siri.api.mcp.mcp_openapi_server.service.OpenApiDefinitionService;
+import io.modelcontextprotocol.server.McpServer;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
@@ -37,13 +38,16 @@ class ToolResponseStructureTest {
     @Mock
     private ConfigurableBeanFactory beanFactory;
 
+    @Mock
+    private McpServer mcpServer;
     private ObjectMapper objectMapper;
     private ToolConfiguration toolConfiguration;
+
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        toolConfiguration = new ToolConfiguration(openApiDefinitionService, apiClient, beanFactory, objectMapper);
+        toolConfiguration = new ToolConfiguration(openApiDefinitionService, apiClient, beanFactory, objectMapper, mcpServer);
     }
 
     @Test

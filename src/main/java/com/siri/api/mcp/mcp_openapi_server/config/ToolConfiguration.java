@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siri.api.mcp.mcp_openapi_server.service.ApiClient;
 import com.siri.api.mcp.mcp_openapi_server.service.OpenApiDefinitionService;
+import io.modelcontextprotocol.server.McpSyncServer;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
@@ -14,6 +15,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;
+import org.springframework.ai.mcp.McpToolUtils;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.execution.ToolCallResultConverter;
 import org.springframework.ai.tool.function.FunctionToolCallback;
@@ -36,6 +38,7 @@ public class ToolConfiguration {
     private final ApiClient apiClient;
     private final ConfigurableBeanFactory beanFactory;
     private final ObjectMapper objectMapper;
+    private final McpSyncServer mcpServer;
 
     // Cache for resolved schema references to improve performance
     private final Map<String, Schema<?>> schemaCache = new ConcurrentHashMap<>();
@@ -44,11 +47,13 @@ public class ToolConfiguration {
     // Cache for response schemas to improve performance
     private final Map<String, Map<String, Object>> responseSchemaCache = new ConcurrentHashMap<>();
 
-    public ToolConfiguration(OpenApiDefinitionService openApiDefinitionService, ApiClient apiClient, ConfigurableBeanFactory beanFactory, ObjectMapper objectMapper) {
+
+    public ToolConfiguration(OpenApiDefinitionService openApiDefinitionService, ApiClient apiClient, ConfigurableBeanFactory beanFactory, ObjectMapper objectMapper, McpSyncServer server) {
         this.openApiDefinitionService = openApiDefinitionService;
         this.apiClient = apiClient;
         this.beanFactory = beanFactory;
         this.objectMapper = objectMapper;
+        this.mcpServer = server;
     }
 
     @PostConstruct
@@ -107,6 +112,7 @@ public class ToolConfiguration {
 
         // Register as singleton bean to be discovered by Spring AI
         beanFactory.registerSingleton(beanName, toolCallback);
+        mcpServer.addTool(McpToolUtils.toSyncToolSpecification(toolCallback));
         log.info("Successfully registered tool: {}", operationId);
     }
 
@@ -525,6 +531,15 @@ public class ToolConfiguration {
                         property.put("enum", paramSchema.getEnum());
                         log.debug("Added enum values for parameter {}: {}", parameter.getName(), paramSchema.getEnum());
                     }
+
+                    //Handle items for arrays
+                    if ("array".equals(paramSchema.getType()) && paramSchema.getItems() != null) {
+                        Schema<?> itemsSchema = paramSchema.getItems();
+                        Map<String, Object> itemsMap = convertSchemaToMap(itemsSchema);
+                        property.put("items", itemsMap);
+                        log.debug("Added items schema for array parameter {}: {}", parameter.getName(), itemsMap);
+                    }
+
                 } else {
                     // No schema available, use safe defaults
                     property.put("type", "string");
