@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP OpenAPI Server Management</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background-color: #f5f5f5;
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section { 
+            margin: 20px 0; 
+            padding: 20px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            background-color: #fafafa;
+        }
+        .form-group { 
+            margin: 10px 0; 
+        }
+        label { 
+            display: block; 
+            margin-bottom: 5px; 
+            font-weight: bold; 
+        }
+        input, textarea { 
+            width: 100%; 
+            padding: 8px; 
+            border: 1px solid #ccc; 
+            border-radius: 3px; 
+            box-sizing: border-box;
+        }
+        button { 
+            padding: 10px 20px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 3px; 
+            cursor: pointer; 
+            margin: 5px 5px 5px 0;
+        }
+        button:hover { 
+            background: #0056b3; 
+        }
+        .btn-danger {
+            background: #dc3545;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .tools-list { 
+            margin-top: 20px; 
+        }
+        .tool-item { 
+            padding: 15px; 
+            border: 1px solid #eee; 
+            margin: 5px 0; 
+            border-radius: 3px; 
+            background-color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tool-info {
+            flex-grow: 1;
+        }
+        .tool-actions {
+            margin-left: 10px;
+        }
+        .error { 
+            color: red; 
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .success { 
+            color: green; 
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .loading {
+            color: #6c757d;
+            font-style: italic;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #495057;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MCP OpenAPI Server Management</h1>
+        
+        <div class="section">
+            <h2>Current Tools</h2>
+            <button onclick="loadTools()">Refresh Tools</button>
+            <div id="tools-list" class="tools-list">
+                <div class="loading">Loading tools...</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Add OpenAPI from URI</h2>
+            <form id="uri-form">
+                <div class="form-group">
+                    <label for="uri-name">Name:</label>
+                    <input type="text" id="uri-name" required placeholder="e.g., My API">
+                </div>
+                <div class="form-group">
+                    <label for="uri-url">OpenAPI URI:</label>
+                    <input type="url" id="uri-url" required placeholder="https://example.com/openapi.json">
+                </div>
+                <div class="form-group">
+                    <label for="uri-override">Override URL (optional):</label>
+                    <input type="url" id="uri-override" placeholder="http://localhost:8080">
+                </div>
+                <button type="submit">Add from URI</button>
+            </form>
+            <div id="uri-message"></div>
+        </div>
+        
+        <div class="section">
+            <h2>Upload OpenAPI File</h2>
+            <form id="file-form" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="file-name">Name:</label>
+                    <input type="text" id="file-name" required placeholder="e.g., My API">
+                </div>
+                <div class="form-group">
+                    <label for="file-input">OpenAPI File:</label>
+                    <input type="file" id="file-input" accept=".json,.yaml,.yml" required>
+                </div>
+                <div class="form-group">
+                    <label for="file-override">Override URL (optional):</label>
+                    <input type="url" id="file-override" placeholder="http://localhost:8080">
+                </div>
+                <button type="submit">Upload File</button>
+            </form>
+            <div id="file-message"></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadTools() {
+            try {
+                const response = await fetch('/api/openapi/tools');
+                const tools = await response.json();
+                
+                const toolsList = document.getElementById('tools-list');
+                toolsList.innerHTML = '';
+                
+                if (tools.length === 0) {
+                    toolsList.innerHTML = '<p>No tools available</p>';
+                    return;
+                }
+                
+                tools.forEach(tool => {
+                    const toolDiv = document.createElement('div');
+                    toolDiv.className = 'tool-item';
+                    toolDiv.innerHTML = `
+                        <div class="tool-info">
+                            <strong>${escapeHtml(tool.operationId)}</strong> (${escapeHtml(tool.documentName)})<br>
+                            <small>${escapeHtml(tool.description || 'No description')}</small>
+                        </div>
+                        <div class="tool-actions">
+                            <button class="btn-danger" onclick="removeTool('${escapeHtml(tool.documentName)}')">Remove</button>
+                        </div>
+                    `;
+                    toolsList.appendChild(toolDiv);
+                });
+            } catch (error) {
+                console.error('Error loading tools:', error);
+                document.getElementById('tools-list').innerHTML = '<p class="error">Error loading tools</p>';
+            }
+        }
+        
+        async function removeTool(documentName) {
+            if (!confirm(`Are you sure you want to remove the OpenAPI document "${documentName}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/openapi/remove/${encodeURIComponent(documentName)}`, {
+                    method: 'DELETE'
+                });
+                
+                const message = await response.text();
+                
+                if (response.ok) {
+                    showMessage('tools-list', message, 'success');
+                    loadTools();
+                } else {
+                    showMessage('tools-list', message, 'error');
+                }
+            } catch (error) {
+                console.error('Error removing tool:', error);
+                showMessage('tools-list', 'Network error', 'error');
+            }
+        }
+        
+        document.getElementById('uri-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('uri-name').value.trim();
+            const uri = document.getElementById('uri-url').value.trim();
+            const overrideUrl = document.getElementById('uri-override').value.trim();
+            
+            try {
+                const response = await fetch('/api/openapi/add-uri', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        name, 
+                        uri, 
+                        overrideUrl: overrideUrl || null 
+                    })
+                });
+                
+                const message = await response.text();
+                const messageDiv = document.getElementById('uri-message');
+                
+                if (response.ok) {
+                    messageDiv.innerHTML = `<div class="success">${escapeHtml(message)}</div>`;
+                    document.getElementById('uri-form').reset();
+                    loadTools();
+                } else {
+                    messageDiv.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
+                }
+            } catch (error) {
+                console.error('Error adding from URI:', error);
+                document.getElementById('uri-message').innerHTML = '<div class="error">Network error</div>';
+            }
+        });
+        
+        document.getElementById('file-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('file-name').value.trim();
+            const fileInput = document.getElementById('file-input');
+            const overrideUrl = document.getElementById('file-override').value.trim();
+            
+            if (!fileInput.files[0]) {
+                document.getElementById('file-message').innerHTML = '<div class="error">Please select a file</div>';
+                return;
+            }
+            
+            try {
+                // Read file content as text
+                const fileContent = await fileInput.files[0].text();
+                
+                const response = await fetch('/api/openapi/add-file-content', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        name: name, 
+                        content: fileContent, 
+                        overrideUrl: overrideUrl || null,
+                        filename: fileInput.files[0].name
+                    })
+                });
+                
+                const message = await response.text();
+                const messageDiv = document.getElementById('file-message');
+                
+                if (response.ok) {
+                    messageDiv.innerHTML = `<div class="success">${escapeHtml(message)}</div>`;
+                    document.getElementById('file-form').reset();
+                    loadTools();
+                } else {
+                    messageDiv.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
+                }
+            } catch (error) {
+                console.error('Error uploading file:', error);
+                document.getElementById('file-message').innerHTML = '<div class="error">Error reading file or network error</div>';
+            }
+        });
+        
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+        
+        function showMessage(containerId, message, type) {
+            const container = document.getElementById(containerId);
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type;
+            messageDiv.textContent = message;
+            container.insertBefore(messageDiv, container.firstChild);
+            
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.parentNode.removeChild(messageDiv);
+                }
+            }, 5000);
+        }
+        
+        loadTools();
+    </script>
+</body>
+</html>

@@ -54,37 +54,60 @@ public class ToolConfiguration {
     @PostConstruct
     public void registerOpenApiFunctions() {
         openApiDefinitionService.getOperationCache().forEach((operationId, apiOperation) -> {
-            // Create a function that delegates to ApiClient
-            BiFunction<Map<String, Object>, ToolContext, Object> function = (jsonInput, context) ->
-                apiClient.invoke(operationId, jsonInput);
-
-            // Create the tool metadata and definition
-            String description = apiOperation.operation().getSummary() != null ?
-                    apiOperation.operation().getSummary() :
-                    "Operation: " + operationId;
-
-            String schema = convertParametersToJsonSchema(apiOperation.operation());
-
-            // Create tool definition
-            ToolDefinition definition = ToolDefinition.builder()
-                    .name(operationId)
-                    .description(description)
-                    .inputSchema(schema)
-                    .build();
-
-            // Create tool callback with simple result converter
-            FunctionToolCallback<Map<String, Object>, Object> toolCallback =
-                new FunctionToolCallback<>(
-                    definition,
-                    null,
-                    Map.class,
-                    function,
-                    new SimpleToolCallResultConverter()
-                );
-
-            // Register as singleton bean to be discovered by Spring AI
-            beanFactory.registerSingleton(operationId + "Tool", toolCallback);
+            registerSingleOperation(operationId, apiOperation);
         });
+    }
+
+    public void registerNewOperations(OpenApiProperties.Document document) {
+        openApiDefinitionService.getOperationCache().entrySet().stream()
+            .filter(entry -> entry.getValue().document().getName().equals(document.getName()))
+            .forEach(entry -> {
+                String operationId = entry.getKey();
+                OpenApiDefinitionService.ApiOperation apiOperation = entry.getValue();
+                registerSingleOperation(operationId, apiOperation);
+                log.info("Dynamically registered tool: {}", operationId);
+            });
+    }
+
+    public void registerSingleOperation(String operationId, OpenApiDefinitionService.ApiOperation apiOperation) {
+        String beanName = operationId + "Tool";
+        
+        if (beanFactory.containsSingleton(beanName)) {
+            log.warn("Tool with operation ID '{}' already exists, skipping registration", operationId);
+            return;
+        }
+        
+        // Create a function that delegates to ApiClient
+        BiFunction<Map<String, Object>, ToolContext, Object> function = (jsonInput, context) ->
+            apiClient.invoke(operationId, jsonInput);
+
+        // Create the tool metadata and definition
+        String description = apiOperation.operation().getSummary() != null ?
+                apiOperation.operation().getSummary() :
+                "Operation: " + operationId;
+
+        String schema = convertParametersToJsonSchema(apiOperation.operation());
+
+        // Create tool definition
+        ToolDefinition definition = ToolDefinition.builder()
+                .name(operationId)
+                .description(description)
+                .inputSchema(schema)
+                .build();
+
+        // Create tool callback with simple result converter
+        FunctionToolCallback<Map<String, Object>, Object> toolCallback =
+            new FunctionToolCallback<>(
+                definition,
+                null,
+                Map.class,
+                function,
+                new SimpleToolCallResultConverter()
+            );
+
+        // Register as singleton bean to be discovered by Spring AI
+        beanFactory.registerSingleton(beanName, toolCallback);
+        log.info("Successfully registered tool: {}", operationId);
     }
 
     /**
@@ -436,7 +459,7 @@ public class ToolConfiguration {
         return null;
     }
 
-    private String convertParametersToJsonSchema(io.swagger.v3.oas.models.Operation operation) {
+    public String convertParametersToJsonSchema(io.swagger.v3.oas.models.Operation operation) {
         Map<String, Object> schema = new HashMap<>();
         schema.put("type", "object");
         Map<String, Object> properties = new HashMap<>();
